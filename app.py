@@ -15,12 +15,10 @@ def limpiar_numero(val):
     if isinstance(val, (int, float)):
         return float(val)
     s = str(val).strip()
-    # Si contiene separadores de miles y decimales
     if '.' in s and ',' in s:
         s = s.replace('.', '').replace(',', '.')
     elif ',' in s:
         s = s.replace(',', '.')
-    # Extraer caracteres numéricos y punto
     s_clean = re.sub(r'[^\d.-]', '', s)
     try:
         return float(s_clean)
@@ -75,7 +73,6 @@ def calcular_area_gauss(n, e):
 st.title("📐 Generador Automatizado de Minutas Topográficas y Linderos")
 st.markdown("Genera la descripción técnica y legal de linderos, cuadro de coordenadas, cálculo de distancias, rumbos, azimuts y descarga el informe en Word (`.docx`).")
 
-# Formulario de datos generales
 with st.expander("📝 1. Datos Generales del Predio y Profesional", expanded=True):
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -93,7 +90,6 @@ with st.expander("📝 1. Datos Generales del Predio y Profesional", expanded=Tr
 
 st.markdown("### 📍 2. Coordenadas y Puntos del Polígono")
 
-# Carga de archivo
 archivo_subido = st.file_uploader("Cargar archivo Excel (.xlsx, .xls) o CSV con coordenadas", type=["xlsx", "xls", "csv"])
 
 datos_por_defecto = {
@@ -116,7 +112,6 @@ if archivo_subido is not None:
 else:
     df_raw = pd.DataFrame(datos_por_defecto)
 
-# Selector de columnas inteligente
 cols_disponibles = list(df_raw.columns)
 
 def buscar_columna_defecto(lista_cols, opciones):
@@ -146,7 +141,6 @@ with st.expander("⚙️ Asignación de Columnas del Archivo", expanded=(archivo
         index_colindante = (cols_disponibles.index(col_col_def) + 1) if (col_col_def and col_col_def in cols_disponibles and col_col_def not in [sel_punto, sel_norte, sel_este]) else 0
         sel_colindante = st.selectbox("Columna Colindante (Opcional)", opciones_colindante, index=index_colindante)
 
-# Construir tabla normalizada
 df_procesado = pd.DataFrame()
 df_procesado['Punto'] = df_raw[sel_punto].astype(str)
 df_procesado['Norte'] = df_raw[sel_norte].apply(limpiar_numero)
@@ -208,13 +202,11 @@ if st.button("🚀 Generar Minuta y Cálculos", type="primary"):
 
         st.success("✅ Cálculos realizados exitosamente.")
 
-        # Métricas principales
         m1, m2, m3 = st.columns(3)
         m1.metric("Área en Hectáreas", f"{hectareas} Has + {metros_restantes:,.2f} m²", f"{area_m2:,.2f} m² total")
         m2.metric("Perímetro Total", f"{perimetro_total:,.2f} m")
         m3.metric("Fanegadas / Plazas", f"{fanegadas:.2f} Fg")
 
-        # Generar texto formal de la minuta
         texto_minuta = (
             f"DESCRIPCIÓN TÉCNICA Y DETERMINACIÓN DE LINDEROS\n\n"
             f"PREDIO: {nombre_predio.upper()}\n"
@@ -252,7 +244,7 @@ if st.button("🚀 Generar Minuta y Cálculos", type="primary"):
         # Generar archivo Word
         doc = Document()
         
-        titulo = doc.add_heading(f"MEMORIA TÉCNICA Y MINUTA DE LINDEROS", 0)
+        titulo = doc.add_heading("MEMORIA TÉCNICA Y MINUTA DE LINDEROS", 0)
         titulo.alignment = WD_ALIGN_PARAGRAPH.CENTER
         
         p_sub = doc.add_paragraph(f"PREDIO: {nombre_predio.upper()}\nMunicipio de {municipio} ({departamento}) - Vereda {vereda}")
