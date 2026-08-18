@@ -93,7 +93,7 @@ st.markdown("### 📍 2. Coordenadas y Puntos del Polígono")
 archivo_subido = st.file_uploader("Cargar archivo Excel (.xlsx, .xls) o CSV con coordenadas", type=["xlsx", "xls", "csv"])
 
 datos_por_defecto = {
-    "Punto":,
+    "Punto": ["1", "2", "3", "4"],
     "Norte": [2119344.68, 2119347.01, 2119247.20, 2119236.88],
     "Este": [4840129.36, 4840156.42, 4840144.94, 4840135.55],
     "Colindante": ["Servidumbre de acceso", "Predio Lote 2", "Camino Veredal", "Predio Lote 4"]
@@ -241,7 +241,7 @@ if st.button("🚀 Generar Minuta y Cálculos", type="primary"):
         st.subheader("📊 Cuadro Técnico de Coordenadas, Azimuts y Distancias")
         st.dataframe(df_tramos[["Origen", "Destino", "Distancia_m", "Azimut", "Rumbo", "Colindante"]], use_container_width=True)
 
-        # Generar archivo Word
+        # Generar archivo Word (.docx)
         doc = Document()
         
         titulo = doc.add_heading("MEMORIA TÉCNICA Y MINUTA DE LINDEROS", 0)
