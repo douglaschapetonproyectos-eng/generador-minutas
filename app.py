@@ -257,13 +257,11 @@ with st.expander("📝 1. Identificación del Inmueble y Jurisdicción Registral
         matricula_inmobiliaria = st.text_input("Matrícula Inmobiliaria", value="156-47224")
     with col3:
         circuito_registral = st.text_input("Circuito Registral / ORIP", value="Facatativá")
-        profesional = st.text_input("Topógrafo / Perito", value="DOUGLAS CHAPETON GOMEZ")
-        matricula_prof = st.text_input("Matrícula Profesional CPNT", value="01-19914 CPNT")
+        profesional = st.text_input("Topógrafo / Perito Responsable", value="douglas chapeton")
+        matricula_prof = st.text_input("Matrícula Profesional", value="01 19914 cpnt")
 
 # 2. Coordenadas
 st.markdown("### 📍 2. Coordenadas del Polígono (Excel / CSV o Tabla)")
-st.info("Sube tu archivo de coordenadas. Las filas vacías o encabezados de texto serán depurados automáticamente.")
-
 archivo_coords = st.file_uploader("Cargar archivo Excel (.xlsx, .xls) o CSV con coordenadas", type=["xlsx", "xls", "csv"], key="uploader_coords")
 
 df_cargado = pd.DataFrame(columns=["Punto", "Norte", "Este", "Distancia"])
@@ -307,21 +305,19 @@ if archivo_coords is not None:
         if sel_dist != "(Calcular automáticamente)":
             temp_df['Distancia'] = df_raw[sel_dist].apply(limpiar_numero)
 
-        # Depuración automática de filas vacías o con títulos repetidos
         mask_valida = (
             (~temp_df['Punto'].str.upper().isin(['NONE', 'NAN', 'PUNTO', 'PTO', 'VERTICE', 'MOJON', 'ID', ''])) &
             (temp_df['Norte'] > 100) &
             (temp_df['Este'] > 100)
         )
         df_cargado = temp_df[mask_valida].reset_index(drop=True)
-        st.success(f"✅ Se cargaron y depuraron exitosamente {len(df_cargado)} vértices válidos.")
+        st.success(f"✅ Se cargaron {len(df_cargado)} vértices válidos del archivo.")
     except Exception as e:
         st.error(f"Error al leer archivo: {e}")
 
 st.markdown("#### Tabla de Coordenadas del Polígono:")
 df_editor = st.data_editor(df_cargado, num_rows="dynamic", use_container_width=True)
 
-# Limpieza final de la tabla editada
 df_limpio = df_editor.copy()
 if not df_limpio.empty:
     df_limpio['Punto'] = df_limpio['Punto'].astype(str).str.strip()
@@ -357,8 +353,6 @@ opciones_elementos = [
 
 if len(lista_puntos) >= 3:
     config_linderos = []
-
-    # Configuración por costados
     costados = ["Norte", "Oriente", "Sur", "Occidente"]
     
     for c_nombre in costados:
@@ -431,7 +425,6 @@ if st.button("🚀 Generar Minuta Técnica Oficial y Documento Word", type="prim
         e_vals = df_limpio['Este'].values
         n_puntos = len(df_limpio)
 
-        # Cálculo de tramos generales
         tramos_completos = []
         perimetro_total = 0.0
         for i in range(n_puntos):
@@ -474,7 +467,7 @@ if st.button("🚀 Generar Minuta Técnica Oficial y Documento Word", type="prim
         m2.metric("Perímetro Total", f"{perimetro_total:,.2f} Metros")
         m3.metric("Área en Letras", f"{area_en_letras}")
 
-        # Redacción de linderos con numeración consecutiva
+        # Redacción de linderos
         cuerpo_linderos_lista = []
         num_lindero_contador = 1
         costado_anterior = None
@@ -507,32 +500,39 @@ if st.button("🚀 Generar Minuta Técnica Oficial y Documento Word", type="prim
             f"“el bien inmueble identificado catastralmente con el numero predial {cedula_catastral} y folio de matrícula inmobiliaria {matricula_inmobiliaria}, denominado “{nombre_predio.upper()}”, presenta los siguientes linderos referidos al sistema de coordenadas proyectadas magna sirgas origen único nacional con epsg 9377:\n\n"
         )
 
-        cierre_area = f"\n\nDe acuerdo con los anteriores linderos, el área del citado bien inmueble es de {area_m2:,.0f} metros cuadrados o {area_en_letras} metros cuadrados ({hectareas} ha + {metros_restantes:,.0f} M2)."
+        cierre_area = f"\n\nDe acuerdo con los anteriores linderos, el área del citado bien inmueble es de {area_m2:,.0f} metros cuadrados o {area_en_letras} metros cuadrados ({hectareas} ha + {metros_restantes:,.0f} M2).\n\n"
+        
+        bloque_firma = f"Profesional responsable:\n\n\n{profesional.lower()}\nmat prof: {matricula_prof.lower()}"
 
-        texto_minuta_oficial = encabezado_minuta + cuerpo_linderos + cierre_area
+        texto_minuta_oficial = encabezado_minuta + cuerpo_linderos + cierre_area + bloque_firma
 
-        st.subheader("📄 Minuta Técnica Oficial Generada")
-        st.text_area("Texto oficial listo para copiar:", value=texto_minuta_oficial, height=400)
+        st.subheader("📄 Minuta Técnica Oficial Generada (Calibri 12)")
+        st.text_area("Texto oficial listo para copiar y pegar directamente en Word:", value=texto_minuta_oficial, height=450)
 
-        st.subheader("📊 Cuadro Técnico de Coordenadas, Distancias y Sentido")
+        st.subheader("📊 Cuadro Técnico de Coordenadas y Distancias")
         st.dataframe(df_tabla_tramos[["Punto", "Norte", "Este", "Destino", "Distancia_m", "Sentido_Rumbo"]], use_container_width=True)
 
-        # Generar Documento Word (.docx)
+        # Generar Documento Word (.docx) con estilo Calibri 12
         doc = Document()
+        
+        # Configuración de tipografía Calibri 12
+        style = doc.styles['Normal']
+        style.font.name = 'Calibri'
+        style.font.size = Pt(12)
         
         titulo = doc.add_heading("MINUTA TECNICA DE LINDEROS", 0)
         titulo.alignment = WD_ALIGN_PARAGRAPH.CENTER
         
         doc.add_paragraph(
-            f"Corresponde a un inmueble identificado con el numero predial {cedula_catastral} ubicado en la zona Rural Vereda {vereda} del Municipio de {municipio}-{departamento}, denominado {nombre_predio.upper()} e inscrito en el circuito registral de {circuito_registral} bajo matricula inmobiliaria No {matricula_inmobiliaria}\n"
+            f"Corresponde a un inmueble identificado con el numero predial {cedula_catastral} ubicado en la zona Rural Vereda {vereda} del Municipio de {municipio}-{departamento}, denominado {nombre_predio.upper()} e inscrito en el circuito registral de {circuito_registral} bajo matricula inmobiliaria No {matricula_inmobiliaria}"
         )
         
         doc.add_paragraph(
-            "La descripción técnica de los linderos del inmueble, en observancia del artículo 2.2.2.2.17 del decreto 148 de 2020, estableciendo la forma, orientación y extensión de los linderos en los siguientes términos:\n"
+            "La descripción técnica de los linderos del inmueble, en observancia del artículo 2.2.2.2.17 del decreto 148 de 2020, estableciendo la forma, orientación y extensión de los linderos en los siguientes términos:"
         )
 
         doc.add_paragraph(
-            f"“el bien inmueble identificado catastralmente con el numero predial {cedula_catastral} y folio de matrícula inmobiliaria {matricula_inmobiliaria}, denominado “{nombre_predio.upper()}”, presenta los siguientes linderos referidos al sistema de coordenadas proyectadas magna sirgas origen único nacional con epsg 9377:\n"
+            f"“el bien inmueble identificado catastralmente con el numero predial {cedula_catastral} y folio de matrícula inmobiliaria {matricula_inmobiliaria}, denominado “{nombre_predio.upper()}”, presenta los siguientes linderos referidos al sistema de coordenadas proyectadas magna sirgas origen único nacional con epsg 9377:"
         )
 
         for p_lind in cuerpo_linderos_lista:
@@ -541,25 +541,30 @@ if st.button("🚀 Generar Minuta Técnica Oficial y Documento Word", type="prim
         p_cierre = doc.add_paragraph(f"\nDe acuerdo con los anteriores linderos, el área del citado bien inmueble es de {area_m2:,.0f} metros cuadrados o {area_en_letras} metros cuadrados ({hectareas} ha + {metros_restantes:,.0f} M2).")
         p_cierre.runs[0].bold = True
 
+        p_firma_doc = doc.add_paragraph(f"\nProfesional responsable:\n\n\n{profesional.lower()}\nmat prof: {matricula_prof.lower()}")
+        p_firma_doc.runs[0].bold = True
+
         doc.add_heading("CUADRO TÉCNICO DE COORDENADAS Y DISTANCIAS", level=1)
         tabla = doc.add_table(rows=1, cols=6)
         tabla.style = 'Table Grid'
-        hdr = tabla.rows[0].cells
-        hdr[0].text = 'Punto'
-        hdr.text = 'Norte (m)'
-        hdr.text = 'Este (m)'
-        hdr.text = 'Destino'
-        hdr.text = 'Distancia (m)'
-        hdr.text = 'Sentido / Rumbo'
+        
+        hdr_cells = tabla.rows[0].cells
+        nombres_encabezados = ['Punto', 'Norte (m)', 'Este (m)', 'Destino', 'Distancia (m)', 'Sentido / Rumbo']
+        for col_idx, col_name in enumerate(nombres_encabezados):
+            hdr_cells[col_idx].text = col_name
         
         for t in tramos_completos:
-            row = tabla.add_row().cells
-            row[0].text = str(t['Punto'])
-            row.text = f"{t['Norte']:,.4f}"
-            row.text = f"{t['Este']:,.4f}"
-            row.text = str(t['Destino'])
-            row.text = f"{t['Distancia_m']:.2f}"
-            row.text = str(t['Sentido_Rumbo'])
+            row_cells = tabla.add_row().cells
+            fila_valores = [
+                str(t['Punto']),
+                f"{t['Norte']:,.4f}",
+                f"{t['Este']:,.4f}",
+                str(t['Destino']),
+                f"{t['Distancia_m']:.2f}",
+                str(t['Sentido_Rumbo'])
+            ]
+            for c_i, val_celda in enumerate(fila_valores):
+                row_cells[c_i].text = val_celda
 
         # Anexos
         if imagenes_para_word:
@@ -573,8 +578,6 @@ if st.button("🚀 Generar Minuta Técnica Oficial y Documento Word", type="prim
                 except Exception as ex_img:
                     doc.add_paragraph(f"[No se pudo incrustar imagen: {ex_img}]")
                 doc.add_paragraph("")
-
-        doc.add_paragraph(f"\n\n____________________________________\n{profesional.upper()}\nTopógrafo / Perito\nMatrícula Profesional No: {matricula_prof}")
 
         buffer = BytesIO()
         doc.save(buffer)
