@@ -41,35 +41,33 @@ def limpiar_numero(val):
 def calcular_distancia(n1, e1, n2, e2):
     return math.sqrt((n2 - n1)**2 + (e2 - e1)**2)
 
-def calcular_azimut(n1, e1, n2, e2):
+def obtener_rumbo_cardinal(n1, e1, n2, e2):
     dn = n2 - n1
     de = e2 - e1
+    if abs(dn) < 1e-7 and abs(de) < 1e-7:
+        return "Mismo punto"
     rad = math.atan2(de, dn)
     grados = math.degrees(rad)
     if grados < 0:
         grados += 360
-    g = int(grados)
-    m = int((grados - g) * 60)
-    s = round(((grados - g) * 60 - m) * 60, 1)
-    return g, m, s, grados
-
-def calcular_rumbo(azimut_grados):
-    if 0 <= azimut_grados <= 90:
-        cuadrante = "NE"
-        angulo = azimut_grados
-    elif 90 < azimut_grados <= 180:
-        cuadrante = "SE"
-        angulo = 180 - azimut_grados
-    elif 180 < azimut_grados <= 270:
-        cuadrante = "SW"
-        angulo = azimut_grados - 180
+    
+    # 8 sectores cardinales
+    if 337.5 <= grados or grados < 22.5:
+        return "Norte"
+    elif 22.5 <= grados < 67.5:
+        return "Nor-Oriente"
+    elif 67.5 <= grados < 112.5:
+        return "Oriente"
+    elif 112.5 <= grados < 157.5:
+        return "Sur-Oriente"
+    elif 157.5 <= grados < 202.5:
+        return "Sur"
+    elif 202.5 <= grados < 247.5:
+        return "Sur-Occidente"
+    elif 247.5 <= grados < 292.5:
+        return "Occidente"
     else:
-        cuadrante = "NW"
-        angulo = 360 - azimut_grados
-    g = int(angulo)
-    m = int((angulo - g) * 60)
-    s = round(((angulo - g) * 60 - m) * 60, 1)
-    return f"{cuadrante[0]} {g}°{m:02d}'{s:04.1f}\" {cuadrante}"
+        return "Nor-Occidente"
 
 def calcular_area_gauss(n, e):
     num_puntos = len(n)
@@ -122,14 +120,18 @@ def obtener_tramos_entre(p_inicio, p_fin, df):
         n2 = float(limpiar_numero(df_clean.iloc[i2]['Norte']))
         e2 = float(limpiar_numero(df_clean.iloc[i2]['Este']))
         
-        dist = calcular_distancia(n1, e1, n2, e2)
-        g, m, s, az = calcular_azimut(n1, e1, n2, e2)
-        rumbo = calcular_rumbo(az)
+        dist_calc = calcular_distancia(n1, e1, n2, e2)
+        if 'Distancia' in df_clean.columns and pd.notna(df_clean.iloc[i1]['Distancia']) and limpiar_numero(df_clean.iloc[i1]['Distancia']) > 0:
+            dist = float(limpiar_numero(df_clean.iloc[i1]['Distancia']))
+        else:
+            dist = dist_calc
+            
+        rumbo_cardinal = obtener_rumbo_cardinal(n1, e1, n2, e2)
         
         tramos_costado.append({
             "origen": p1, "destino": p2,
             "n1": n1, "e1": e1, "n2": n2, "e2": e2,
-            "dist": dist, "azimut": f"{g}°{m:02d}'{s:04.1f}\"", "rumbo": rumbo
+            "dist": dist, "rumbo": rumbo_cardinal
         })
     return tramos_costado
 
@@ -144,15 +146,15 @@ def redactar_costado(nombre_costado, p_ini, p_fin, colindante, elemento_lindero,
     
     tipo_linea = "línea recta" if len(tramos) == 1 else "línea quebrada"
     colind_txt = str(colindante).strip() if str(colindante).strip() else "predio colindante según levantamiento"
-    elem_txt = str(elemento_lindero).strip() if str(elemento_lindero).strip() else "límite natural"
+    elem_txt = str(elemento_lindero).strip() if str(elemento_lindero).strip() else "límite material"
     
     txt = f"POR EL {nombre_costado}: Inicia en el Punto {p_orig['origen']} de coordenadas (Norte: {p_orig['n1']:,.2f} m, Este: {p_orig['e1']:,.2f} m), "
     txt += f"continúa en {tipo_linea} "
     
     if len(tramos) == 1:
-        txt += f"con rumbo {p_orig['rumbo']} (Azimut {p_orig['azimut']}) en una distancia de {dist_total:.2f} metros "
+        txt += f"en sentido {p_orig['rumbo']} en una distancia de {dist_total:.2f} metros "
     else:
-        puntos_intermedios = [f"Punto {t['destino']} (N: {t['n2']:,.2f} m, E: {t['e2']:,.2f} m, dist: {t['dist']:.2f} m, rumbo: {t['rumbo']})" for t in tramos[:-1]]
+        puntos_intermedios = [f"Punto {t['destino']} (N: {t['n2']:,.2f} m, E: {t['e2']:,.2f} m, sentido {t['rumbo']}, distancia de {t['dist']:.2f} m)" for t in tramos[:-1]]
         if puntos_intermedios:
             txt += f"pasando por {', '.join(puntos_intermedios)}, con una distancia total acumulada de {dist_total:.2f} metros "
         else:
@@ -181,13 +183,14 @@ with st.expander("📝 1. Datos Generales del Predio y Profesional", expanded=Tr
         matricula_prof = st.text_input("Matrícula Profesional CPNT", value="01-19914 CPNT")
 
 # 2. Coordenadas
-st.markdown("### 📍 2. Coordenadas del Polígono")
-archivo_coords = st.file_uploader("Cargar archivo Excel (.xlsx, .xls) o CSV con coordenadas", type=["xlsx", "xls", "csv"], key="uploader_coords")
+st.markdown("### 📍 2. Coordenadas del Polígono (Excel / CSV o Tabla)")
+archivo_coords = st.file_uploader("Cargar archivo Excel (.xlsx, .xls) o CSV (Columnas: Punto, Norte, Este, Distancia opcional)", type=["xlsx", "xls", "csv"], key="uploader_coords")
 
 datos_defecto = {
     "Punto": ["1", "2", "3", "4", "5", "6", "7", "8"],
     "Norte": [2119344.68, 2119347.01, 2119344.82, 2119340.35, 2119247.20, 2119236.88, 2119209.69, 2119292.31],
-    "Este": [4840129.36, 4840156.42, 4840160.43, 4840162.03, 4840144.94, 4840135.55, 4840068.98, 4840086.06]
+    "Este": [4840129.36, 4840156.42, 4840160.43, 4840162.03, 4840144.94, 4840135.55, 4840068.98, 4840086.06],
+    "Distancia": [27.16, 4.57, 4.75, 94.70, 13.95, 71.91, 84.37, 67.95]
 }
 
 if archivo_coords is not None:
@@ -212,22 +215,29 @@ def col_match(lista, ops):
                 return c
     return lista[0] if lista else None
 
-c_pto = col_match(cols, ['punto', 'pto', 'id', 'name', 'vertice', 'est', 'item'])
+c_pto = col_match(cols, ['punto', 'pto', 'id', 'name', 'vertice', 'est', 'item', 'no'])
 c_nor = col_match(cols, ['norte', 'north', 'lat', 'y'])
 c_est = col_match(cols, ['este', 'east', 'lon', 'x'])
+c_dist = col_match(cols, ['distancia', 'dist', 'longitud_tramo', 'dist_m'])
 
 with st.expander("⚙️ Asignación de Columnas de Coordenadas"):
-    sc1, sc2, sc3 = st.columns(3)
+    sc1, sc2, sc3, sc4 = st.columns(4)
     sel_p = sc1.selectbox("Columna de Puntos", cols, index=cols.index(c_pto) if c_pto in cols else 0)
     sel_n = sc2.selectbox("Columna Norte", cols, index=cols.index(c_nor) if c_nor in cols else 0)
     sel_e = sc3.selectbox("Columna Este", cols, index=cols.index(c_est) if c_est in cols else 0)
+    opciones_dist = ["(Calcular automáticamente de coordenadas)"] + cols
+    index_dist = (cols.index(c_dist) + 1) if (c_dist and c_dist in cols and c_dist not in [sel_p, sel_n, sel_e]) else 0
+    sel_dist = sc4.selectbox("Columna Distancia (Opcional)", opciones_dist, index=index_dist)
 
 df_pts = pd.DataFrame()
 df_pts['Punto'] = df_raw[sel_p].astype(str)
 df_pts['Norte'] = df_raw[sel_n].apply(limpiar_numero)
 df_pts['Este'] = df_raw[sel_e].apply(limpiar_numero)
 
-st.markdown("#### Tabla de Vértices del Polígono (Editable):")
+if sel_dist != "(Calcular automáticamente de coordenadas)":
+    df_pts['Distancia'] = df_raw[sel_dist].apply(limpiar_numero)
+
+st.markdown("#### Tabla de Coordenadas del Polígono (Editable):")
 df_editor = st.data_editor(df_pts, num_rows="dynamic", use_container_width=True)
 
 lista_puntos_actuales = [str(x).strip() for x in df_editor['Punto'].tolist() if str(x).strip()]
@@ -236,7 +246,7 @@ if len(lista_puntos_actuales) < 2:
 
 # 3. Configuración de Linderos
 st.markdown("### 🧭 3. Configuración de Colindancias por Costados Cardinales")
-st.caption("Selecciona los mojones iniciales y finales para cada lindero y su elemento delimitador material.")
+st.caption("Selecciona los mojones iniciales y finales para cada costado y el elemento delimitador material.")
 
 opciones_elementos = [
     "cerca de alambre al medio",
@@ -339,15 +349,22 @@ if st.button("🚀 Generar Minuta Técnica y Documento Word", type="primary"):
             n2 = n_vals[sig]
             e2 = e_vals[sig]
             
-            dist = calcular_distancia(n1, e1, n2, e2)
+            dist_calc = calcular_distancia(n1, e1, n2, e2)
+            if 'Distancia' in df_editor_clean.columns and pd.notna(df_editor_clean.iloc[i]['Distancia']) and limpiar_numero(df_editor_clean.iloc[i]['Distancia']) > 0:
+                dist = float(limpiar_numero(df_editor_clean.iloc[i]['Distancia']))
+            else:
+                dist = dist_calc
+                
             perimetro_total += dist
-            g, m, s, az = calcular_azimut(n1, e1, n2, e2)
-            rumbo = calcular_rumbo(az)
+            rumbo_cardinal = obtener_rumbo_cardinal(n1, e1, n2, e2)
             
             tramos_completos.append({
-                "Origen": p1, "Destino": p2,
-                "Norte_Orig": n1, "Este_Orig": e1,
-                "Distancia_m": dist, "Azimut": f"{g}°{m:02d}'{s:04.1f}\"", "Rumbo": rumbo
+                "Punto": p1,
+                "Norte": n1,
+                "Este": e1,
+                "Destino": p2,
+                "Distancia_m": dist,
+                "Sentido_Rumbo": rumbo_cardinal
             })
 
         df_tabla_tramos = pd.DataFrame(tramos_completos)
@@ -391,8 +408,8 @@ if st.button("🚀 Generar Minuta Técnica y Documento Word", type="primary"):
         st.subheader("📄 Minuta Técnica Generada")
         st.text_area("Texto de la Minuta listo para copiar:", value=texto_minuta_completa, height=350)
 
-        st.subheader("📊 Cuadro Técnico de Coordenadas, Distancias y Azimuts")
-        st.dataframe(df_tabla_tramos[["Origen", "Destino", "Distancia_m", "Azimut", "Rumbo"]], use_container_width=True)
+        st.subheader("📊 Cuadro Técnico de Coordenadas, Distancias y Sentido")
+        st.dataframe(df_tabla_tramos[["Punto", "Norte", "Este", "Destino", "Distancia_m", "Sentido_Rumbo"]], use_container_width=True)
 
         # Generar Documento Word (.docx)
         doc = Document()
@@ -419,22 +436,24 @@ if st.button("🚀 Generar Minuta Técnica y Documento Word", type="primary"):
         doc.add_paragraph("Punto de partida y donde encierra el polígono.")
 
         doc.add_heading("3. CUADRO TÉCNICO DE COORDENADAS Y TRAMOS", level=1)
-        tabla = doc.add_table(rows=1, cols=5)
+        tabla = doc.add_table(rows=1, cols=6)
         tabla.style = 'Table Grid'
         hdr = tabla.rows[0].cells
-        hdr[0].text = 'Origen'
+        hdr[0].text = 'Punto'
+        hdr.text = 'Norte (m)'
+        hdr.text = 'Este (m)'
         hdr.text = 'Destino'
         hdr.text = 'Distancia (m)'
-        hdr.text = 'Azimut'
-        hdr.text = 'Rumbo'
+        hdr.text = 'Sentido / Rumbo'
         
         for t in tramos_completos:
             row = tabla.add_row().cells
-            row[0].text = str(t['Origen'])
+            row[0].text = str(t['Punto'])
+            row.text = f"{t['Norte']:,.2f}"
+            row.text = f"{t['Este']:,.2f}"
             row.text = str(t['Destino'])
             row.text = f"{t['Distancia_m']:.2f}"
-            row.text = str(t['Azimut'])
-            row.text = str(t['Rumbo'])
+            row.text = str(t['Sentido_Rumbo'])
 
         # Anexo de Imágenes en Word
         if imagenes_para_word:
