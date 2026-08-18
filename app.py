@@ -90,7 +90,7 @@ def limpiar_numero(val):
     if isinstance(val, (int, float)):
         return float(val)
     s = str(val).strip()
-    if not s:
+    if not s or s.lower() in ['none', 'null', 'nan']:
         return 0.0
     if '.' in s and ',' in s:
         if s.rfind(',') > s.rfind('.'):
@@ -145,101 +145,95 @@ def calcular_area_gauss(n, e):
         area += e[i] * n[j] - e[j] * n[i]
     return abs(area) / 2.0
 
-def obtener_tramos_entre(p_inicio, p_fin, df, es_occidente=False):
-    df_clean = df.reset_index(drop=True)
-    n_p = len(df_clean)
-    if n_p < 2:
+def obtener_tramos_lindero(p_ini, p_fin, df, es_ultimo_cierre=False):
+    df_c = df.reset_index(drop=True)
+    n_p = len(df_c)
+    pts_list = [str(x).strip() for x in df_c['Punto'].tolist()]
+    
+    if p_ini not in pts_list:
         return []
     
-    pts_list = [str(x).strip() for x in df_clean['Punto'].tolist()]
-    p_inicio_str = str(p_inicio).strip()
-    p_fin_str = str(p_fin).strip()
+    idx_ini = pts_list.index(p_ini)
+    seq = []
     
-    if p_inicio_str not in pts_list:
-        return []
-    
-    idx_ini = pts_list.index(p_inicio_str)
-    seq_indices = []
-    curr = idx_ini
-    
-    if es_occidente:
+    if es_ultimo_cierre:
+        curr = idx_ini
         while curr < n_p:
-            seq_indices.append(curr)
+            seq.append(curr)
             curr += 1
-        seq_indices.append(0)  # Cierra volviendo al mojón 1
+        seq.append(0)  # Vuelve al punto inicial 1
     else:
-        if p_fin_str not in pts_list:
+        if p_fin not in pts_list:
             return []
-        idx_fin = pts_list.index(p_fin_str)
-        if idx_ini == idx_fin:
-            return []
+        idx_fin = pts_list.index(p_fin)
+        curr = idx_ini
         while True:
-            seq_indices.append(curr)
+            seq.append(curr)
             if curr == idx_fin:
                 break
             curr = (curr + 1) % n_p
             if curr == idx_ini:
                 break
-            
-    tramos_costado = []
-    for k in range(len(seq_indices) - 1):
-        i1 = seq_indices[k]
-        i2 = seq_indices[k+1]
-        p1 = str(df_clean.iloc[i1]['Punto']).strip()
-        n1 = float(limpiar_numero(df_clean.iloc[i1]['Norte']))
-        e1 = float(limpiar_numero(df_clean.iloc[i1]['Este']))
-        
-        p2 = str(df_clean.iloc[i2]['Punto']).strip()
-        n2 = float(limpiar_numero(df_clean.iloc[i2]['Norte']))
-        e2 = float(limpiar_numero(df_clean.iloc[i2]['Este']))
+                
+    tramos = []
+    for k in range(len(seq) - 1):
+        i1 = seq[k]
+        i2 = seq[k+1]
+        p1 = str(df_c.iloc[i1]['Punto']).strip()
+        n1 = float(limpiar_numero(df_c.iloc[i1]['Norte']))
+        e1 = float(limpiar_numero(df_c.iloc[i1]['Este']))
+        p2 = str(df_c.iloc[i2]['Punto']).strip()
+        n2 = float(limpiar_numero(df_c.iloc[i2]['Norte']))
+        e2 = float(limpiar_numero(df_c.iloc[i2]['Este']))
         
         dist_calc = calcular_distancia(n1, e1, n2, e2)
-        if 'Distancia' in df_clean.columns and pd.notna(df_clean.iloc[i1]['Distancia']) and limpiar_numero(df_clean.iloc[i1]['Distancia']) > 0:
-            dist = float(limpiar_numero(df_clean.iloc[i1]['Distancia']))
+        if 'Distancia' in df_c.columns and pd.notna(df_c.iloc[i1]['Distancia']) and limpiar_numero(df_c.iloc[i1]['Distancia']) > 0:
+            dist = float(limpiar_numero(df_c.iloc[i1]['Distancia']))
         else:
             dist = dist_calc
             
-        rumbo_cardinal = obtener_rumbo_cardinal(n1, e1, n2, e2)
-        
-        tramos_costado.append({
+        rumbo = obtener_rumbo_cardinal(n1, e1, n2, e2)
+        tramos.append({
             "origen": p1, "destino": p2,
             "n1": n1, "e1": e1, "n2": n2, "e2": e2,
-            "dist": dist, "rumbo": rumbo_cardinal
+            "dist": dist, "rumbo": rumbo
         })
-    return tramos_costado
+    return tramos
 
-def redactar_lindero_formato(nombre_costado, num_lindero, p_ini, p_fin, colindante, elemento_lindero, df, es_occidente=False):
-    tramos = obtener_tramos_entre(p_ini, p_fin, df, es_occidente=es_occidente)
+def redactar_lindero_item(costado_nombre, num_lindero, p_ini, p_fin, colindante, elemento, df, es_primer_del_costado=True, es_ultimo_cierre=False):
+    tramos = obtener_tramos_lindero(p_ini, p_fin, df, es_ultimo_cierre=es_ultimo_cierre)
     if not tramos:
-        return f"Por el {nombre_costado}: lindero {num_lindero}: no se pudo delimitar el tramo."
+        return ""
     
     dist_total = sum(t['dist'] for t in tramos)
     p_orig = tramos[0]
     p_dest = tramos[-1]
     
     tipo_linea = "en línea semi-recta" if len(tramos) == 1 else "en línea quebrada"
-    sentido_gral = p_orig['rumbo']
+    sentido = p_orig['rumbo']
     colind_txt = str(colindante).strip() if str(colindante).strip() else "predio vecino"
-    elem_txt = str(elemento_lindero).strip() if str(elemento_lindero).strip() else "cerca de alambre al medio"
+    elem_txt = str(elemento).strip() if str(elemento).strip() else "cerca de alambre al medio"
     
     if not elem_txt.endswith("al medio") and not elem_txt.startswith("quebrada") and not elem_txt.startswith("río") and not elem_txt.startswith("camino"):
         elem_txt_completo = f"{elem_txt} al medio."
     else:
         elem_txt_completo = f"{elem_txt}."
-
-    txt = f"Por el {nombre_costado}: lindero {num_lindero}: inicia en el mojón {p_orig['origen']} (N: {p_orig['n1']:.4f}, E: {p_orig['e1']:.4f}); "
-    txt += f"en sentido {sentido_gral} {tipo_linea}, "
+        
+    prefijo = f"Por el {costado_nombre}: " if es_primer_del_costado else ""
+    
+    txt = f"{prefijo}lindero {num_lindero}: inicia en el mojón {p_orig['origen']} (N: {p_orig['n1']:.4f}, E: {p_orig['e1']:.4f}); "
+    txt += f"en sentido {sentido} {tipo_linea}, "
     
     if len(tramos) == 1:
-        if es_occidente:
+        if es_ultimo_cierre:
             txt += f"regresando hasta el mojón {p_dest['destino']} (N: {p_dest['n2']:.4f}, E: {p_dest['e2']:.4f}) punto de partida y encierra, "
         else:
             txt += f"hasta el mojón {p_dest['destino']} (N: {p_dest['n2']:.4f}, E: {p_dest['e2']:.4f}); "
     else:
         for t in tramos[:-1]:
             txt += f"hasta el mojón {t['destino']} (N: {t['n2']:.4f}, E: {t['e2']:.4f}); "
-        
-        if es_occidente:
+            
+        if es_ultimo_cierre:
             txt += f"regresando hasta el mojón {p_dest['destino']} (N: {p_dest['n2']:.4f}, E: {p_dest['e2']:.4f}) punto de partida y encierra, "
         else:
             txt += f"hasta el mojón {p_dest['destino']} (N: {p_dest['n2']:.4f}, E: {p_dest['e2']:.4f}); "
@@ -248,7 +242,7 @@ def redactar_lindero_formato(nombre_costado, num_lindero, p_ini, p_fin, colindan
     return txt
 
 st.title("📐 Generador Automatizado de Minutas Topográficas y Linderos")
-st.markdown("Herramienta técnica conforme al **Art. 2.2.2.2.17 del Decreto 148 de 2020** (Sistema MAGNA-SIRGAS Origen Único EPSG 9377).")
+st.markdown("Conforme al **Art. 2.2.2.2.17 del Decreto 148 de 2020** (Sistema MAGNA-SIRGAS Origen Único EPSG 9377).")
 
 # 1. Datos Generales
 with st.expander("📝 1. Identificación del Inmueble y Jurisdicción Registral", expanded=True):
@@ -267,12 +261,12 @@ with st.expander("📝 1. Identificación del Inmueble y Jurisdicción Registral
         matricula_prof = st.text_input("Matrícula Profesional CPNT", value="01-19914 CPNT")
 
 # 2. Coordenadas
-st.markdown("### 📍 2. Coordenadas del Polígono")
-st.info("Carga tu archivo Excel o CSV con las columnas: **Punto**, **Norte**, **Este** (y **Distancia** opcional).")
+st.markdown("### 📍 2. Coordenadas del Polígono (Excel / CSV o Tabla)")
+st.info("Sube tu archivo de coordenadas. Las filas vacías o encabezados de texto serán depurados automáticamente.")
 
 archivo_coords = st.file_uploader("Cargar archivo Excel (.xlsx, .xls) o CSV con coordenadas", type=["xlsx", "xls", "csv"], key="uploader_coords")
 
-df_base_inicial = pd.DataFrame(columns=["Punto", "Norte", "Este", "Distancia"])
+df_cargado = pd.DataFrame(columns=["Punto", "Norte", "Este", "Distancia"])
 
 if archivo_coords is not None:
     try:
@@ -281,7 +275,9 @@ if archivo_coords is not None:
         else:
             df_raw = pd.read_excel(archivo_coords)
         
-        cols = list(df_raw.columns)
+        cols = [str(c).strip() for c in df_raw.columns]
+        df_raw.columns = cols
+        
         def col_match(lista, ops):
             for c in lista:
                 c_l = str(c).lower().strip()
@@ -304,36 +300,53 @@ if archivo_coords is not None:
             index_dist = (cols.index(c_dist) + 1) if (c_dist and c_dist in cols and c_dist not in [sel_p, sel_n, sel_e]) else 0
             sel_dist = sc4.selectbox("Columna Distancia (Opcional)", opciones_dist, index=index_dist)
 
-        df_pts = pd.DataFrame()
-        df_pts['Punto'] = df_raw[sel_p].astype(str)
-        df_pts['Norte'] = df_raw[sel_n].apply(limpiar_numero)
-        df_pts['Este'] = df_raw[sel_e].apply(limpiar_numero)
+        temp_df = pd.DataFrame()
+        temp_df['Punto'] = df_raw[sel_p].astype(str).str.strip()
+        temp_df['Norte'] = df_raw[sel_n].apply(limpiar_numero)
+        temp_df['Este'] = df_raw[sel_e].apply(limpiar_numero)
         if sel_dist != "(Calcular automáticamente)":
-            df_pts['Distancia'] = df_raw[sel_dist].apply(limpiar_numero)
-            
-        st.success(f"✅ Archivo '{archivo_coords.name}' cargado con éxito ({len(df_pts)} puntos detectados).")
+            temp_df['Distancia'] = df_raw[sel_dist].apply(limpiar_numero)
+
+        # Depuración automática de filas vacías o con títulos repetidos
+        mask_valida = (
+            (~temp_df['Punto'].str.upper().isin(['NONE', 'NAN', 'PUNTO', 'PTO', 'VERTICE', 'MOJON', 'ID', ''])) &
+            (temp_df['Norte'] > 100) &
+            (temp_df['Este'] > 100)
+        )
+        df_cargado = temp_df[mask_valida].reset_index(drop=True)
+        st.success(f"✅ Se cargaron y depuraron exitosamente {len(df_cargado)} vértices válidos.")
     except Exception as e:
         st.error(f"Error al leer archivo: {e}")
-        df_pts = df_base_inicial
-else:
-    df_pts = df_base_inicial
 
-st.markdown("#### Tabla de Coordenadas (Ingresa o edita los puntos):")
-df_editor = st.data_editor(df_pts, num_rows="dynamic", use_container_width=True)
+st.markdown("#### Tabla de Coordenadas del Polígono:")
+df_editor = st.data_editor(df_cargado, num_rows="dynamic", use_container_width=True)
 
-lista_puntos = [str(x).strip() for x in df_editor['Punto'].tolist() if str(x).strip()]
+# Limpieza final de la tabla editada
+df_limpio = df_editor.copy()
+if not df_limpio.empty:
+    df_limpio['Punto'] = df_limpio['Punto'].astype(str).str.strip()
+    df_limpio['Norte'] = df_limpio['Norte'].apply(limpiar_numero)
+    df_limpio['Este'] = df_limpio['Este'].apply(limpiar_numero)
+    mask = (
+        (~df_limpio['Punto'].str.upper().isin(['NONE', 'NAN', 'PUNTO', 'PTO', 'VERTICE', 'MOJON', 'ID', ''])) &
+        (df_limpio['Norte'] > 100) &
+        (df_limpio['Este'] > 100)
+    )
+    df_limpio = df_limpio[mask].reset_index(drop=True)
+
+lista_puntos = [str(x).strip() for x in df_limpio['Punto'].tolist() if str(x).strip()]
 
 # 3. Configuración de Linderos
 st.markdown("### 🧭 3. Configuración de Colindancias por Costados Cardinales")
 
 opciones_elementos = [
-    "cerca de alambre al medio",
-    "cerca viva al medio",
-    "muro en ladrillo al medio",
-    "muro en piedra / mampostería al medio",
-    "vía pública al medio",
-    "camino veredal al medio",
-    "servidumbre de acceso al medio",
+    "cerca de alambre",
+    "cerca viva",
+    "muro en ladrillo",
+    "muro en piedra / mampostería",
+    "vía pública",
+    "camino veredal",
+    "servidumbre de acceso",
     "quebrada aguas arriba",
     "quebrada aguas abajo",
     "río aguas arriba",
@@ -343,42 +356,45 @@ opciones_elementos = [
 ]
 
 if len(lista_puntos) >= 3:
-    # NORTE
-    with st.container():
-        st.markdown("#### 🔵 Costado Norte (Lindero 1)")
-        n1, n2, n3, n4 = st.columns(4)
-        pto_ini_norte = n1.selectbox("Inicia en Mojón", lista_puntos, index=0, key="ini_norte")
-        pto_fin_norte = n2.selectbox("Hasta Mojón", lista_puntos, index=min(1, len(lista_puntos)-1), key="fin_norte")
-        colind_norte = n3.text_input("Colinda con el predio:", value="Predio 00 00 0002 0233 000", key="col_norte")
-        elem_norte = n4.selectbox("Elemento Delimitador", opciones_elementos, index=0, key="elem_norte")
+    config_linderos = []
 
-    # ORIENTE
-    with st.container():
-        st.markdown("#### 🟢 Costado Oriente (Lindero 2)")
-        o1, o2, o3, o4 = st.columns(4)
-        pto_ini_oriente = o1.selectbox("Inicia en Mojón", lista_puntos, index=min(1, len(lista_puntos)-1), key="ini_oriente")
-        pto_fin_oriente = o2.selectbox("Hasta Mojón", lista_puntos, index=min(2, len(lista_puntos)-1), key="fin_oriente")
-        colind_oriente = o3.text_input("Colinda con el predio:", value="predio 00 00 0002 00608 000", key="col_oriente")
-        elem_oriente = o4.selectbox("Elemento Delimitador", opciones_elementos, index=0, key="elem_oriente")
-
-    # SUR
-    with st.container():
-        st.markdown("#### 🟡 Costado Sur (Lindero 3)")
-        s1, s2, s3, s4 = st.columns(4)
-        pto_ini_sur = s1.selectbox("Inicia en Mojón", lista_puntos, index=min(2, len(lista_puntos)-1), key="ini_sur")
-        pto_fin_sur = s2.selectbox("Hasta Mojón", lista_puntos, index=min(len(lista_puntos)-2, len(lista_puntos)-1), key="fin_sur")
-        colind_sur = s3.text_input("Colinda con el predio:", value="predio 00 00 0002 0131 000", key="col_sur")
-        elem_sur = s4.selectbox("Elemento Delimitador", opciones_elementos, index=0, key="elem_sur")
-
-    # OCCIDENTE
-    with st.container():
-        st.markdown("#### 🔴 Costado Occidente (Lindero 4 / Cierre al Mojón 1)")
-        w1, w2, w3 = st.columns(3)
-        pto_ini_occ = w1.selectbox("Inicia en Mojón", lista_puntos, index=min(len(lista_puntos)-2, len(lista_puntos)-1), key="ini_occ")
-        colind_occ = w2.text_input("Colinda con el predio:", value="predio 00 01 0004 0164 000", key="col_occ")
-        elem_occ = w3.selectbox("Elemento Delimitador", opciones_elementos, index=0, key="elem_occ")
+    # Configuración por costados
+    costados = ["Norte", "Oriente", "Sur", "Occidente"]
+    
+    for c_nombre in costados:
+        st.markdown(f"#### 🌐 Costado {c_nombre}")
+        num_colinds = st.number_input(f"Número de colindantes por el {c_nombre}:", min_value=1, max_value=10, value=1, key=f"num_{c_nombre}")
+        
+        for k in range(int(num_colinds)):
+            sub_id = f"{c_nombre}_{k+1}"
+            st.caption(f"Tramo / Colindante #{k+1} del Costado {c_nombre}")
+            c1, c2, c3, c4 = st.columns(4)
+            
+            p_ini_def = lista_puntos[0] if k == 0 and c_nombre == "Norte" else lista_puntos[min(k, len(lista_puntos)-1)]
+            p_fin_def = lista_puntos[min(k+1, len(lista_puntos)-1)]
+            
+            p_ini = c1.selectbox(f"Inicia en Mojón ({sub_id})", lista_puntos, index=lista_puntos.index(p_ini_def) if p_ini_def in lista_puntos else 0, key=f"ini_{sub_id}")
+            
+            es_ultimo = (c_nombre == "Occidente" and k == int(num_colinds) - 1)
+            if es_ultimo:
+                c2.info(f"Hasta: Mojón {lista_puntos[-1]} y cierra al Mojón {lista_puntos[0]}")
+                p_fin = lista_puntos[-1]
+            else:
+                p_fin = c2.selectbox(f"Hasta Mojón ({sub_id})", lista_puntos, index=lista_puntos.index(p_fin_def) if p_fin_def in lista_puntos else min(1, len(lista_puntos)-1), key=f"fin_{sub_id}")
+                
+            colind = c3.text_input(f"Predio colindante ({sub_id})", value="00 00 0002 0233 000", key=f"col_{sub_id}")
+            elem = c4.selectbox(f"Elemento delimitador ({sub_id})", opciones_elementos, index=0, key=f"elem_{sub_id}")
+            
+            config_linderos.append({
+                "costado": c_nombre,
+                "p_ini": p_ini,
+                "p_fin": p_fin,
+                "colindante": colind,
+                "elemento": elem,
+                "es_ultimo_cierre": es_ultimo
+            })
 else:
-    st.info("Ingresa o carga al menos 3 puntos en la tabla superior para configurar los linderos por costados.")
+    st.info("👆 Carga o ingresa las coordenadas en la tabla superior para configurar los linderos.")
 
 # 4. Anexo de Planos e Imágenes / PDF
 st.markdown("### 🖼️ 4. Anexar Imágenes de Planos o Fotografías (PNG / JPG / PDF)")
@@ -408,29 +424,28 @@ if archivos_planos:
 # 5. Generación de la Minuta
 st.markdown("---")
 if st.button("🚀 Generar Minuta Técnica Oficial y Documento Word", type="primary"):
-    df_editor_clean = df_editor.dropna(subset=['Punto', 'Norte', 'Este']).reset_index(drop=True)
-    if len(df_editor_clean) < 3:
-        st.error("Se requieren al menos 3 vértices con coordenadas válidas para conformar el polígono.")
+    if len(df_limpio) < 3:
+        st.error("Se requieren al menos 3 vértices con coordenadas válidas para calcular el polígono.")
     else:
-        n_vals = [float(limpiar_numero(x)) for x in df_editor_clean['Norte'].values]
-        e_vals = [float(limpiar_numero(x)) for x in df_editor_clean['Este'].values]
-        n_puntos = len(df_editor_clean)
+        n_vals = df_limpio['Norte'].values
+        e_vals = df_limpio['Este'].values
+        n_puntos = len(df_limpio)
 
-        # Cálculos de tramos generales
+        # Cálculo de tramos generales
         tramos_completos = []
         perimetro_total = 0.0
         for i in range(n_puntos):
             sig = (i + 1) % n_puntos
-            p1 = str(df_editor_clean.iloc[i]['Punto']).strip()
-            n1 = n_vals[i]
-            e1 = e_vals[i]
-            p2 = str(df_editor_clean.iloc[sig]['Punto']).strip()
-            n2 = n_vals[sig]
-            e2 = e_vals[sig]
+            p1 = str(df_limpio.iloc[i]['Punto']).strip()
+            n1 = float(n_vals[i])
+            e1 = float(e_vals[i])
+            p2 = str(df_limpio.iloc[sig]['Punto']).strip()
+            n2 = float(n_vals[sig])
+            e2 = float(e_vals[sig])
             
             dist_calc = calcular_distancia(n1, e1, n2, e2)
-            if 'Distancia' in df_editor_clean.columns and pd.notna(df_editor_clean.iloc[i]['Distancia']) and limpiar_numero(df_editor_clean.iloc[i]['Distancia']) > 0:
-                dist = float(limpiar_numero(df_editor_clean.iloc[i]['Distancia']))
+            if 'Distancia' in df_limpio.columns and pd.notna(df_limpio.iloc[i]['Distancia']) and limpiar_numero(df_limpio.iloc[i]['Distancia']) > 0:
+                dist = float(limpiar_numero(df_limpio.iloc[i]['Distancia']))
             else:
                 dist = dist_calc
                 
@@ -459,11 +474,31 @@ if st.button("🚀 Generar Minuta Técnica Oficial y Documento Word", type="prim
         m2.metric("Perímetro Total", f"{perimetro_total:,.2f} Metros")
         m3.metric("Área en Letras", f"{area_en_letras}")
 
-        # Redacción de linderos
-        txt_norte = redactar_lindero_formato("Norte", "1", pto_ini_norte, pto_fin_norte, colind_norte, elem_norte, df_editor_clean)
-        txt_oriente = redactar_lindero_formato("Oriente", "2", pto_ini_oriente, pto_fin_oriente, colind_oriente, elem_oriente, df_editor_clean)
-        txt_sur = redactar_lindero_formato("SUR", "3", pto_ini_sur, pto_fin_sur, colind_sur, elem_sur, df_editor_clean)
-        txt_occidente = redactar_lindero_formato("OCCIDENTE", "4", pto_ini_occ, "", colind_occ, elem_occ, df_editor_clean, es_occidente=True)
+        # Redacción de linderos con numeración consecutiva
+        cuerpo_linderos_lista = []
+        num_lindero_contador = 1
+        costado_anterior = None
+        
+        for item in config_linderos:
+            es_primer = (item['costado'] != costado_anterior)
+            costado_anterior = item['costado']
+            
+            txt_lindero = redactar_lindero_item(
+                item['costado'],
+                num_lindero_contador,
+                item['p_ini'],
+                item['p_fin'],
+                item['colindante'],
+                item['elemento'],
+                df_limpio,
+                es_primer_del_costado=es_primer,
+                es_ultimo_cierre=item['es_ultimo_cierre']
+            )
+            if txt_lindero:
+                cuerpo_linderos_lista.append(txt_lindero)
+                num_lindero_contador += 1
+
+        cuerpo_linderos = "\n\n".join(cuerpo_linderos_lista)
 
         encabezado_minuta = (
             f"MINUTA TECNICA DE LINDEROS\n\n"
@@ -472,14 +507,12 @@ if st.button("🚀 Generar Minuta Técnica Oficial y Documento Word", type="prim
             f"“el bien inmueble identificado catastralmente con el numero predial {cedula_catastral} y folio de matrícula inmobiliaria {matricula_inmobiliaria}, denominado “{nombre_predio.upper()}”, presenta los siguientes linderos referidos al sistema de coordenadas proyectadas magna sirgas origen único nacional con epsg 9377:\n\n"
         )
 
-        cuerpo_linderos = f"{txt_norte}\n\n{txt_oriente}\n\n{txt_sur}\n\n{txt_occidente}\n\n"
-        
-        cierre_area = f"De acuerdo con los anteriores linderos, el área del citado bien inmueble es de {area_m2:,.0f} metros cuadrados o {area_en_letras} metros cuadrados ({hectareas} ha + {metros_restantes:,.0f} M2)."
+        cierre_area = f"\n\nDe acuerdo con los anteriores linderos, el área del citado bien inmueble es de {area_m2:,.0f} metros cuadrados o {area_en_letras} metros cuadrados ({hectareas} ha + {metros_restantes:,.0f} M2)."
 
         texto_minuta_oficial = encabezado_minuta + cuerpo_linderos + cierre_area
 
         st.subheader("📄 Minuta Técnica Oficial Generada")
-        st.text_area("Texto oficial listo para copiar:", value=texto_minuta_oficial, height=380)
+        st.text_area("Texto oficial listo para copiar:", value=texto_minuta_oficial, height=400)
 
         st.subheader("📊 Cuadro Técnico de Coordenadas, Distancias y Sentido")
         st.dataframe(df_tabla_tramos[["Punto", "Norte", "Este", "Destino", "Distancia_m", "Sentido_Rumbo"]], use_container_width=True)
@@ -490,24 +523,22 @@ if st.button("🚀 Generar Minuta Técnica Oficial y Documento Word", type="prim
         titulo = doc.add_heading("MINUTA TECNICA DE LINDEROS", 0)
         titulo.alignment = WD_ALIGN_PARAGRAPH.CENTER
         
-        p1_doc = doc.add_paragraph(
+        doc.add_paragraph(
             f"Corresponde a un inmueble identificado con el numero predial {cedula_catastral} ubicado en la zona Rural Vereda {vereda} del Municipio de {municipio}-{departamento}, denominado {nombre_predio.upper()} e inscrito en el circuito registral de {circuito_registral} bajo matricula inmobiliaria No {matricula_inmobiliaria}\n"
         )
         
-        p2_doc = doc.add_paragraph(
+        doc.add_paragraph(
             "La descripción técnica de los linderos del inmueble, en observancia del artículo 2.2.2.2.17 del decreto 148 de 2020, estableciendo la forma, orientación y extensión de los linderos en los siguientes términos:\n"
         )
 
-        p3_doc = doc.add_paragraph(
+        doc.add_paragraph(
             f"“el bien inmueble identificado catastralmente con el numero predial {cedula_catastral} y folio de matrícula inmobiliaria {matricula_inmobiliaria}, denominado “{nombre_predio.upper()}”, presenta los siguientes linderos referidos al sistema de coordenadas proyectadas magna sirgas origen único nacional con epsg 9377:\n"
         )
 
-        doc.add_paragraph(txt_norte)
-        doc.add_paragraph(txt_oriente)
-        doc.add_paragraph(txt_sur)
-        doc.add_paragraph(txt_occidente)
+        for p_lind in cuerpo_linderos_lista:
+            doc.add_paragraph(p_lind)
         
-        p_cierre = doc.add_paragraph(f"\n{cierre_area}")
+        p_cierre = doc.add_paragraph(f"\nDe acuerdo con los anteriores linderos, el área del citado bien inmueble es de {area_m2:,.0f} metros cuadrados o {area_en_letras} metros cuadrados ({hectareas} ha + {metros_restantes:,.0f} M2).")
         p_cierre.runs[0].bold = True
 
         doc.add_heading("CUADRO TÉCNICO DE COORDENADAS Y DISTANCIAS", level=1)
